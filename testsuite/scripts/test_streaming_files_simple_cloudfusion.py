@@ -95,34 +95,6 @@ def wait_for_completed_upload():
     p.wait()
     p.kill()
     
-
-    function wait_until_transfer_is_complete {
-    # Wait until a transfer of size $1 is complete and the network activity stagnates. Return the seconds needed to recognize the end of the network transfer, after it had already ended.
-    # @param 1: size of transfer in MB
-    # @param 2: log file with ifstat output, where the first column is the time in seconds from the epoch of when the line was output by ifstat
-    # @param 3: the time in seconds from the epoch of when the file operation started
-	transfered_KB=`gawk -v start=$3 'BEGIN {total=0} ($1 >= start) {total+=$2+$3} END {print total}' $2`
-	transfered_KB=`round $transfered_KB`
-	previous_transfered_KB=$transfered_KB
-	stagnated=0
-	while [[ ($transfered_KB -lt $(($1*1000)) || $stagnated -lt 10) && $stagnated -lt 30 ]];
-	do
-		if [ $(($previous_transfered_KB+15)) -gt $transfered_KB ];
-		then
-			let stagnated=stagnated+1
-		else		
-			stagnated=0
-			previous_transfered_KB=$transfered_KB
-		fi
-		transfered_KB=`gawk -v start=$3 '($1 >= start) {total+=$2+$3} END {print total}' $2`
-		transfered_KB=`round $transfered_KB`
-		#echo $transfered_KB -lt $(($size*1000));
-		#echo "waiting for network transfer to complete"
-		sleep 1
-	done
-	echo $stagnated
-}
-        
 def restart_cloudfusion():
     os.system("pkill -9 -f  \".*cloudfusion .*\"")
     os.system("fusermount -zu "+MOUNT_DIRECTORY)
