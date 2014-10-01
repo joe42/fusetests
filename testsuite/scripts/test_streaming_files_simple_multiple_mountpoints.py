@@ -123,7 +123,7 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     os.makedirs(LOG_DIR)
 
     def ifstat_output(line):
-        with open(LOG_DIR+'/ifstats_out', 'w') as file:
+        with open(LOG_DIR+'/ifstats_out', 'a') as file:
             file.write(line)
 
     copy_stats_process = Process(target=periodic_copy_stats, args=(LOG_DIR, mountpoint))
