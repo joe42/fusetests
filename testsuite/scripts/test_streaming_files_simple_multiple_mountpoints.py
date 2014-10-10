@@ -190,6 +190,7 @@ class Ifstats(object):
         return (max_upload_in_KBps, max_download_in_KBps)
     
 def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, log_file, sample_files_dir, unit, mountpoint, check=False, timelimit_in_min=None):
+    ''':returns: amount of files successfully written to the file system'''
     #check="$6" #check copy destination with the file of the name "file_sizeMB" in $SAMPLE_FILES_DIR
     success = 0
     errors = 0
@@ -210,16 +211,20 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     ifstats = Ifstats()
     time_before_operation = datetime.datetime.now() - datetime.timedelta(0)
     for nr in range(1, nr_of_files+1):  # from 1 to file quantity
+        tries = 10
         while True:
             try:
                 dd('if='+copy_source+str(nr), 'of='+copy_destination+str(nr), 'bs=131072')
+                success += 1
             except ErrorReturnCode:
-                errors = 0
+                tries -= 1
+                errors += 1
+                if tries == 0:
+                    break 
                 sys.stderr.write("Error occured during copying - retrying:")
                 traceback.print_exc()
                 continue
             break # stop loop if command succeeded
-        success += 1
         timeout = timelimit_in_s < (datetime.datetime.now() - time_before_operation).seconds
         if timeout:
             break
@@ -262,6 +267,7 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     if not os.path.exists(log_file):
         with open(log_file, 'w') as f:
             f.write(str(table))
+    return success
 
 def get_immediate_subdirectories(a_dir):
     return [os.path.abspath(os.path.join(a_dir, name)) for name in os.walk(a_dir).next()[1]]
@@ -322,9 +328,9 @@ def main():
             if not os.path.exists(test_directory):
                 os.makedirs(test_directory)
             print "Test writing file size %s %s"%(size,unit)
-            log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], write_time_log, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
+            writen_files = log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], write_time_log, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
             print "Test reading file size %s %s"%(size,unit)
-            log_copy_operation(test_directory+'/'+size+unit+'_', TEMP_DIR+'/'+size+unit+'_', size, filequantity_arr[idx], read_time_log, SAMPLE_FILES_DIR, unit, mountpoint, check=True, timelimit_in_min=60)
+            log_copy_operation(test_directory+'/'+size+unit+'_', TEMP_DIR+'/'+size+unit+'_', size, writen_files, read_time_log, SAMPLE_FILES_DIR, unit, mountpoint, check=True, timelimit_in_min=60)
             for nr in reversed( range(1,filequantity_arr[idx]+1) ):  # from file quantity to 1
                 os.remove(test_directory+'/'+size+unit+'_'+str(nr))
                 os.remove(TEMP_DIR+'/'+size+unit+'_'+str(nr))
