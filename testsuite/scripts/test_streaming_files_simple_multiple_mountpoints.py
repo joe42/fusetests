@@ -7,15 +7,18 @@ import shutil
 from sh import ErrorReturnCode
 import time
 from multiprocessing import Process
-from sh import ifstat
+import tempfile
+import collections
+import traceback
 try:
     from sh import dd
     from sh import git
+    from sh import ifstat
 except:
-    import traceback
     traceback.print_exc()
     print 'Please install the python sh module first : pip install sh'
     exit(1)
+from tabulate import tabulate
     
 # CONSTANTS
 HOME = os.environ['HOME']
@@ -69,21 +72,31 @@ def is_equal(file1, file2):
     file2_md5 = hashlib.md5(data).hexdigest()
     return file1_md5 == file2_md5
 
-def wait_for_completed_upload(mountpoint):
+def wait_for_completed_upload(mountpoint, timeout_in_s = None):
     print "waiting for completed upload"
+    if timeout_in_s is not None:
+        print "waiting at most %s min" % (timeout_in_s/60)
     CLOUDFUSION_NOT_UPLOADED_PATH = mountpoint + "/stats/notuploaded"
+    time_waited = 0
     if os.path.exists(CLOUDFUSION_NOT_UPLOADED_PATH):
         while os.path.getsize(CLOUDFUSION_NOT_UPLOADED_PATH) > 0:
             sleep(10)
+            time_waited += 10
+            if time_waited > timeout_in_s:
+                break
         return
-
+    
+    start = time.time()
+    
     def no_network_activity(line):
         try:
-            kbit_per_5min = sum(map(int, x.split()))
+            kbit_per_5min = sum(map(int, line.split()))
             if kbit_per_5min < 200:
                 return True
-        except ValueError,e:
+        except ValueError:
             pass
+        if start + timeout_in_s < time.time():
+            return True
         return False
     p = ifstat('-bzn', '600', _out=(lambda x:no_network_activity ))
     p.wait()
@@ -110,10 +123,80 @@ def periodic_copy_stats(log_directory, mountpoint):
         now = datetime.datetime.today().strftime('%Y.%m.%d_%H.%M')
         shutil.move(ERRORS_LOG_DIR+"/errors", ERRORS_LOG_DIR+"/"+now)
         time.sleep(60)
+
+class Ifstats(object):
+    def __init__(self):
+        self.tmp_stats = tempfile.NamedTemporaryFile()
+        self._proc = ifstat('-tbzn', '1', _out=self.__ifstat_output)
+    def __ifstat_output(self, line):
+        self.tmp_stats.write(line)
+    def stop(self):
+        self._proc.kill()
+    def store(self, filepath):
+        shutil.copy(self.tmp_stats.name, filepath)
+    def get_total_in_MB(self):
+        return self.get_total_in_KB() / 1000
+    def get_total_in_KB(self):
+        self.tmp_stats.seek(0)
+        download_in_KBps = 0
+        upload_in_KBps = 0
+        for line in self.tmp_stats:
+            try:
+                _, up, down = line.split()
+                download_in_KBps += float( up )
+                upload_in_KBps += float( down )
+            except ValueError: # Header of ifstat 
+                pass
+        return (upload_in_KBps, download_in_KBps)
+    def get_average_transferrate_in_MBps(self):
+        (upload_in_KBps, download_in_KBps) = self.get_average_transferrate_in_KBps()
+        upload_in_MBps = upload_in_KBps / 1000
+        download_in_MBps = download_in_KBps / 1000
+        return (upload_in_MBps, download_in_MBps)
+    def get_duration_in_s(self):
+        self.tmp_stats.seek(0)
+        total_time = 0
+        for line in self.tmp_stats:
+            try:
+                _, _, _ = line.split()
+                total_time += 1
+            except ValueError: # Header of ifstat 
+                pass
+        return total_time
+    def get_average_transferrate_in_KBps(self):
+        up, down = self.get_total_in_KB()
+        duration = self.get_duration_in_s() 
+        return (up / duration, down / duration)
+    def get_max_transferrate_in_MBps(self):
+        (upload_in_KBps, download_in_KBps) = self.get_max_transferrate_in_KBps()
+        upload_in_MBps = upload_in_KBps / 1000
+        download_in_MBps = download_in_KBps / 1000
+        return (upload_in_MBps, download_in_MBps)
+    def get_max_transferrate_in_KBps(self):
+        self.tmp_stats.seek(0)
+        max_download_in_KBps = 0
+        max_upload_in_KBps = 0
+        for line in self.tmp_stats:
+            try:
+                _, up, down = line.split()
+                download_in_KBps = float( up )
+                upload_in_KBps = float( down )
+                if upload_in_KBps > max_upload_in_KBps:
+                    max_upload_in_KBps = upload_in_KBps
+                if download_in_KBps > max_download_in_KBps:
+                    max_download_in_KBps = download_in_KBps
+            except ValueError: # Header of ifstat 
+                pass
+        return (max_upload_in_KBps, max_download_in_KBps)
     
-def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, log_file, sample_files_dir, unit, mountpoint, check=False):
+def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, log_file, sample_files_dir, unit, mountpoint, check=False, timelimit_in_min=None):
     #check="$6" #check copy destination with the file of the name "file_sizeMB" in $SAMPLE_FILES_DIR
     success = 0
+    errors = 0
+    corruption = 0
+    
+    timelimit_in_s = timelimit_in_min * 60
+    timeout = False
 
     LOG_DIR = os.path.dirname(log_file)+"/"+str(file_size)
     if check:
@@ -121,29 +204,36 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     else:
         LOG_DIR += "/write"
     os.makedirs(LOG_DIR)
-
-    def ifstat_output(line):
-        with open(LOG_DIR+'/ifstats_out', 'a') as file:
-            file.write(line)
-
+      
     copy_stats_process = Process(target=periodic_copy_stats, args=(LOG_DIR, mountpoint))
     copy_stats_process.start()
-    ifstat_logger = ifstat('-tbzn', '1', _out=ifstat_output)
+    ifstats = Ifstats()
     time_before_operation = datetime.datetime.now() - datetime.timedelta(0)
     for nr in range(1, nr_of_files+1):  # from 1 to file quantity
-        operation_succeeded=0
         while True:
             try:
                 dd('if='+copy_source+str(nr), 'of='+copy_destination+str(nr), 'bs=131072')
             except ErrorReturnCode:
-                import traceback
+                errors = 0
                 sys.stderr.write("Error occured during copying - retrying:")
                 traceback.print_exc()
                 continue
             break # stop loop if command succeeded
         success += 1
-    wait_for_completed_upload(mountpoint)
-    ifstat_logger.kill()
+        timeout = timelimit_in_s < (datetime.datetime.now() - time_before_operation).seconds
+        if timeout:
+            break
+    total_time_of_operation = (datetime.datetime.now() - time_before_operation).total_seconds()
+    # Give upload process at least 10 minutes, to see how it behaves without load
+    TEN_MIN = 60 * 10
+    if timeout:
+        max_wait_in_s = TEN_MIN
+    else:
+        max_wait_in_s = max( timelimit_in_s - total_time_of_operation, TEN_MIN)    
+    wait_for_completed_upload(mountpoint, max_wait_in_s)
+    timeout = timelimit_in_s < (datetime.datetime.now() - time_before_operation).seconds
+    ifstats.stop()
+    ifstats.store(LOG_DIR+'/ifstats_out')
     time.sleep(60)
     copy_stats_process.terminate()
     time_after_operations = datetime.datetime.now() - datetime.timedelta(0)
@@ -151,16 +241,27 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     print "time_before_operation %s - time_after_operation %s" % (time_before_operation, time_after_operations)
     for nr in range(1, nr_of_files+1):  # from 1 to file quantity
         if check:
-            if is_equal(copy_destination+str(nr), sample_files_dir+'/'+str(file_size)+unit+'_'+str(nr)):
-                success -= 1
-    average_transfer_rate = (1.0*int(file_size) * nr_of_files)*(1/time_of_multiple_operations.total_seconds())
-    #"single_file_size    total_size    time_for_operation_in_seconds average_transfer_rate nr_of_files success"
+            if not is_equal(copy_destination+str(nr), sample_files_dir+'/'+str(file_size)+unit+'_'+str(nr)):
+                corruption += 1
+    average_transfer_rate = (1.0*int(file_size) * success)*(1/time_of_multiple_operations.total_seconds())
+    columns = collections.OrderedDict()
+    columns['single file size'] = [file_size]
+    if not timeout:
+        columns['total size'] = [file_size * nr_of_files]
+        columns['time for operation [s]'] = [time_of_multiple_operations.total_seconds()]
+        columns['average transfer rate [%s/s]' % unit] = [average_transfer_rate]
+    else:
+        columns['total size'] = [ifstats.get_total_in_MB()]
+        columns['time for operation [s]'] = [ifstats.get_duration_in_s()]
+        columns['average transfer rate [MB/s]'] = [ifstats.get_average_transferrate_in_MBps()]
+    columns['success'] = [success]
+    columns['io errors'] = [errors]
+    columns['corrupt files'] = [corruption]
+        
+    table = tabulate(columns, tablefmt="plain")
     if not os.path.exists(log_file):
         with open(log_file, 'w') as f:
-            f.write("single file size\ttotal size\ttime for operation [s]\taverage transfer rate [%s/s]\tnumber of files\tsuccess\n" % unit)
-    with open(log_file, 'a') as f:
-        total_size = int(file_size)*nr_of_files
-        f.write("%s\t%s\t%s\t%s\t%s\t%s\n" % (file_size, total_size, time_of_multiple_operations.total_seconds(), average_transfer_rate, nr_of_files, success))
+            f.write(str(table))
 
 def get_immediate_subdirectories(a_dir):
     return [os.path.abspath(os.path.join(a_dir, name)) for name in os.walk(a_dir).next()[1]]
@@ -200,15 +301,11 @@ def main():
     #iterate over all mountpoint directories
     for mountpoint in MOUNT_DIRECTORIES:
         data_directory = mountpoint+"/data"
-        test_directory = data_directory+'/cftest'
-        stats_directroy = mountpoint+"/stats"
-        notuploaded_directroy = mountpoint+"/notuploaded"
-        cloudfusion_config_path = mountpoint+"/config/config"
+        test_directory = data_directory+'/cftest3'
             
         log_directory = LOG_DIRECTORY+'/logs/streaming/'+os.path.basename(mountpoint)+'/'+now
         write_time_log = log_directory + '/write_time_log'
         read_time_log = log_directory + '/read_time_log'
-        previous_file_read_time_log = log_directory + '/previous_file_read_time_log'
         if not os.path.exists(log_directory):
             os.makedirs(log_directory)
             
@@ -216,7 +313,6 @@ def main():
 
         
         idx = 0 
-        
         for size in filesize_arr:
             if os.path.exists('/tmp/stop'):
                 print "waiting as long as /tmp/stop exists"
@@ -226,10 +322,10 @@ def main():
             if not os.path.exists(test_directory):
                 os.makedirs(test_directory)
             print "Test writing file size %s %s"%(size,unit)
-            log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], write_time_log, SAMPLE_FILES_DIR, unit, mountpoint)
+            log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], write_time_log, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
             print "Test reading file size %s %s"%(size,unit)
-            log_copy_operation(test_directory+'/'+size+unit+'_', TEMP_DIR+'/'+size+unit+'_', size, filequantity_arr[idx], read_time_log, SAMPLE_FILES_DIR, unit, mountpoint, check=True)
-            for nr in range(1,filequantity_arr[idx]+1):  # from 1 to file quantity
+            log_copy_operation(test_directory+'/'+size+unit+'_', TEMP_DIR+'/'+size+unit+'_', size, filequantity_arr[idx], read_time_log, SAMPLE_FILES_DIR, unit, mountpoint, check=True, timelimit_in_min=60)
+            for nr in reversed( range(1,filequantity_arr[idx]+1) ):  # from file quantity to 1
                 os.remove(test_directory+'/'+size+unit+'_'+str(nr))
                 os.remove(TEMP_DIR+'/'+size+unit+'_'+str(nr))
             idx += 1
