@@ -334,9 +334,16 @@ def main():
             writen_files = log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], write_time_log, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
             print "Test reading file size %s %s"%(size,unit)
             log_copy_operation(test_directory+'/'+size+unit+'_', TEMP_DIR+'/'+size+unit+'_', size, writen_files, read_time_log, SAMPLE_FILES_DIR, unit, mountpoint, check=True, timelimit_in_min=60)
-            for nr in reversed( range(1,filequantity_arr[idx]+1) ):  # from file quantity to 1
-                os.remove(test_directory+'/'+size+unit+'_'+str(nr))
-                os.remove(TEMP_DIR+'/'+size+unit+'_'+str(nr))
+            for nr in reversed( range(1,writen_files) ):  # from amount of written files to 1
+                try:
+                    os.remove(test_directory+'/'+size+unit+'_'+str(nr))
+                except IOError: # Does not exist
+                    traceback.print_exc()
+            for nr in range(1,filequantity_arr[idx]+1):  # from 1 to file quantity
+                try:
+                    os.remove(TEMP_DIR+'/'+size+unit+'_'+str(nr))
+                except IOError: # Does not exist
+                    traceback.print_exc()
             idx += 1
         print "Created statistic files in "+log_directory
     
