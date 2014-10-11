@@ -135,7 +135,10 @@ class Ifstats(object):
     def store(self, filepath):
         shutil.copy(self.tmp_stats.name, filepath)
     def get_total_in_MB(self):
-        return self.get_total_in_KB() / 1000
+        (upload_in_KBps, download_in_KBps) = self.get_total_in_KB()
+        upload_in_MBps = upload_in_KBps / 1000
+        download_in_MBps = download_in_KBps / 1000
+        return (upload_in_MBps, download_in_MBps)
     def get_total_in_KB(self):
         self.tmp_stats.seek(0)
         download_in_KBps = 0
