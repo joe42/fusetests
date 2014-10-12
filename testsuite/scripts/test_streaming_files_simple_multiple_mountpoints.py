@@ -247,10 +247,13 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     time_after_operations = datetime.datetime.now() - datetime.timedelta(0)
     time_of_multiple_operations = time_after_operations - time_before_operation
     print "time_before_operation %s - time_after_operation %s" % (time_before_operation, time_after_operations)
-    for nr in range(1, nr_of_files+1):  # from 1 to file quantity
+    for nr in range(1, success):  # from 1 to written files
         if check:
-            if not is_equal(copy_destination+str(nr), sample_files_dir+'/'+str(file_size)+unit+'_'+str(nr)):
-                corruption += 1
+            try:
+                if not is_equal(copy_destination+str(nr), sample_files_dir+'/'+str(file_size)+unit+'_'+str(nr)):
+                    corruption += 1
+            except Exception, e:
+                print "Error occured during checking for file corruption:"+repr(e)
     average_transfer_rate = (1.0*int(file_size) * success)*(1/time_of_multiple_operations.total_seconds())
     columns = collections.OrderedDict()
     columns['single file size'] = [file_size]
