@@ -219,13 +219,14 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
             try:
                 dd('if='+copy_source+str(nr), 'of='+copy_destination+str(nr), 'bs=131072')
                 success += 1
-            except ErrorReturnCode:
+                print "copy "+copy_source+str(nr)
+            except ErrorReturnCode, e:
                 tries -= 1
                 errors += 1
                 if tries == 0:
                     break 
-                sys.stderr.write("Error occured during copying - retrying:")
-                traceback.print_exc()
+                print "Error occured during copying - retrying:"+repr(e)
+                #traceback.print_exc()
                 continue
             break # stop loop if command succeeded
         timeout = timelimit_in_s < (datetime.datetime.now() - time_before_operation).seconds
