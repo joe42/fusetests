@@ -19,12 +19,35 @@ except:
     print 'Please install the python sh module first : pip install sh'
     exit(1)
 from tabulate import tabulate
+import smtplib
     
 # CONSTANTS
 HOME = os.environ['HOME']
 SAMPLE_FILES_DIR = '/tmp/cf/samplefiles'
 now = datetime.datetime.today().strftime('%Y.%m.%d_%H.%M')
 TEMP_DIR = '/tmp/cf/'+now 
+
+SMTP_SERVER = "smtp.web.de"
+SMTP_PORT = 587
+RECIPIENT = None
+MAIL_SENDER = None
+MAIL_PASSWORD = None
+
+
+def send_mail(sender, password, recipient, header, message):
+    body = header+'\n'+message+'\n\n'
+    smtpserver = smtplib.SMTP(SMTP_SERVER,SMTP_PORT)
+    smtpserver.set_debuglevel(True)
+    smtpserver.ehlo()
+    smtpserver.starttls()
+    smtpserver.ehlo
+    smtpserver.login(sender, password)
+    smtpserver.sendmail(sender, recipient, body)
+    smtpserver.close()
+
+
+def create_mail_header(sender, recipient, subject):
+    return 'To:' + sender + '\n' + 'From: ' + recipient + '\n' + 'Subject:'+subject+'\n'
     
 class MyParser(argparse.ArgumentParser):
     def error(self, message):
@@ -282,6 +305,9 @@ def get_immediate_subdirectories(a_dir):
 
 
 def main():
+    if None in [RECIPIENT, MAIL_SENDER,MAIL_PASSWORD]:
+        print "Please specify global variables RECIPIENT, MAIL_SENDER, MAIL_PASSWORD"
+        return
     parser = MyParser()
     parser.add_argument('mount_path')
     parser.add_argument('log_directory')
@@ -338,16 +364,17 @@ def main():
             writen_files = log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], write_time_log, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
             print "Test reading file size %s %s"%(size,unit)
             log_copy_operation(test_directory+'/'+size+unit+'_', TEMP_DIR+'/'+size+unit+'_', size, writen_files, read_time_log, SAMPLE_FILES_DIR, unit, mountpoint, check=True, timelimit_in_min=60)
-            for nr in reversed( range(1,writen_files) ):  # from amount of written files to 1
-                try:
-                    os.remove(test_directory+'/'+size+unit+'_'+str(nr))
-                except IOError: # Does not exist
-                    traceback.print_exc()
+            filename = raw_input('Please clean up %s and press enter to continue: '%(test_directory))
             for nr in range(1,filequantity_arr[idx]+1):  # from 1 to file quantity
                 try:
                     os.remove(TEMP_DIR+'/'+size+unit+'_'+str(nr))
                 except IOError: # Does not exist
-                    traceback.print_exc()
+                    print "cannot remove "+TEMP_DIR+'/'+size+unit+'_'+str(nr)
+            try:
+                HEADER = create_mail_header(MAIL_SENDER, RECIPIENT, "Test done: %s - %s %s"%(test_directory, size, unit))
+                send_mail(MAIL_SENDER, MAIL_PASSWORD, RECIPIENT, HEADER, "test done")
+            except Exception, e:
+                pass
             idx += 1
         print "Created statistic files in "+log_directory
     
