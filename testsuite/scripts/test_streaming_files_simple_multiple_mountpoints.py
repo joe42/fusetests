@@ -101,15 +101,23 @@ def wait_for_completed_transfer(mountpoint, timeout_in_s = None):
     print "waiting for completed upload"
     if timeout_in_s is not None:
         print "waiting at most %s min" % (timeout_in_s/60)
+    else:
+        timeout_in_s = float("inf")
     CLOUDFUSION_NOT_UPLOADED_PATH = mountpoint + "/stats/notuploaded"
     time_waited = 0
     if os.path.exists(CLOUDFUSION_NOT_UPLOADED_PATH):
+        if timeout_in_s == float("inf"):
+            fsh = ProgressFish(total=10000000000)
+        else:
+            fsh = ProgressFish(total=timeout_in_s)
         while os.path.getsize(CLOUDFUSION_NOT_UPLOADED_PATH) > 0:
             sleep(10)
             time_waited += 10
+            fsh.animate(amount=time_waited)
             if time_waited > timeout_in_s:
                 break
         return
+    print ""
     
     start = time.time()
     
@@ -232,6 +240,8 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     errors = 0
     corruption = 0
     
+    if timelimit_in_min is None:
+        timelimit_in_min = float("inf")
     timelimit_in_s = timelimit_in_min * 60
     timeout = False
 
