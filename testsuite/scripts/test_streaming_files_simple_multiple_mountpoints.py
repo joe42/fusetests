@@ -292,7 +292,7 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     time_after_operations = datetime.datetime.now() - datetime.timedelta(0)
     time_of_multiple_operations = time_after_operations - time_before_operation
     print "time_before_operation %s - time_after_operation %s" % (time_before_operation, time_after_operations)
-    for nr in range(1, success):  # from 1 to written files
+    for nr in range(1, success+1):  # from 1 to written files
         if check:
             try:
                 if not is_equal(copy_destination+str(nr), sample_files_dir+'/'+str(file_size)+unit+'_'+str(nr)):
