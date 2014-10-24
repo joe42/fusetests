@@ -302,20 +302,27 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     columns = collections.OrderedDict()
     columns['single file size'] = [file_size]
     if not timeout:
-        columns['total size'] = [file_size * nr_of_files]
+        columns['total size'] = [int(file_size) * nr_of_files]
         columns['time for operation [s]'] = [time_of_multiple_operations.total_seconds()]
         columns['average transfer rate [%s/s]' % unit] = [average_transfer_rate]
     else:
-        columns['total size'] = [ifstats.get_total_in_MB()]
-        columns['time for operation [s]'] = [ifstats.get_duration_in_s()]
-        columns['average transfer rate [MB/s]'] = [ifstats.get_average_transferrate_in_MBps()]
+        upload_in_MBps, download_in_MBps = ifstats.get_average_transferrate_in_MBps()
+        upload_in_MB, download_in_MB = ifstats.get_total_in_MB()
+        if reading:
+            columns['total size'] = [download_in_MB]
+            columns['time for operation [s]'] = [ifstats.get_duration_in_s()]
+            columns['average transfer rate [MB/s]'] = [download_in_MBps]
+        else:
+            columns['total size'] = [upload_in_MB]
+            columns['time for operation [s]'] = [ifstats.get_duration_in_s()]
+            columns['average transfer rate [MB/s]'] = [upload_in_MBps]
     columns['success'] = [success]
     columns['io errors'] = [errors]
     columns['corrupt files'] = [corruption]
         
-    table = tabulate(columns, tablefmt="plain")
-    if not os.path.exists(log_file):
-        with open(log_file, 'w') as f:
+    table = tabulate(columns, tablefmt="plain", headers="keys")
+    if not os.path.exists(LOG_DIR+'/log'):
+        with open(LOG_DIR+'/log', 'w') as f:
             f.write(str(table))
     return success
 
@@ -414,6 +421,8 @@ def main():
             except Exception, e:
                 pass
             sleep(120)
+            #sh.fusermount("-z","-u", mountpoint)
+            #filename = raw_input('Please clean up %s and press enter to continue: '%(test_directory))
             idx += 1
             print "Created statistic files in "+log_directory
             shutil.rmtree(temp_dir)
