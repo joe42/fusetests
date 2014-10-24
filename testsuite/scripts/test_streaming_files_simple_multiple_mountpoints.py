@@ -20,7 +20,9 @@ except:
     exit(1)
 from tabulate import tabulate
 import smtplib
-    
+import sh
+from fish import ProgressFish    
+
 # CONSTANTS
 HOME = os.environ['HOME']
 SAMPLE_FILES_DIR = '/tmp/cf/samplefiles'
@@ -37,7 +39,7 @@ MAIL_PASSWORD = None
 def send_mail(sender, password, recipient, header, message):
     body = header+'\n'+message+'\n\n'
     smtpserver = smtplib.SMTP(SMTP_SERVER,SMTP_PORT)
-    smtpserver.set_debuglevel(True)
+    #smtpserver.set_debuglevel(True)
     smtpserver.ehlo()
     smtpserver.starttls()
     smtpserver.ehlo
@@ -95,7 +97,7 @@ def is_equal(file1, file2):
     file2_md5 = hashlib.md5(data).hexdigest()
     return file1_md5 == file2_md5
 
-def wait_for_completed_upload(mountpoint, timeout_in_s = None):
+def wait_for_completed_transfer(mountpoint, timeout_in_s = None):
     print "waiting for completed upload"
     if timeout_in_s is not None:
         print "waiting at most %s min" % (timeout_in_s/60)
@@ -158,22 +160,22 @@ class Ifstats(object):
     def store(self, filepath):
         shutil.copy(self.tmp_stats.name, filepath)
     def get_total_in_MB(self):
-        (upload_in_KBps, download_in_KBps) = self.get_total_in_KB()
-        upload_in_MBps = upload_in_KBps / 1000
-        download_in_MBps = download_in_KBps / 1000
-        return (upload_in_MBps, download_in_MBps)
+        (upload_in_KB, download_in_KB) = self.get_total_in_KB()
+        upload_in_MB = upload_in_KB / 1000
+        download_in_MB = download_in_KB / 1000
+        return (upload_in_MB, download_in_MB)
     def get_total_in_KB(self):
         self.tmp_stats.seek(0)
-        download_in_KBps = 0
-        upload_in_KBps = 0
+        download_in_KB = 0
+        upload_in_KB = 0
         for line in self.tmp_stats:
             try:
                 _, up, down = line.split()
-                download_in_KBps += float( up )
-                upload_in_KBps += float( down )
+                download_in_KB += float( up )
+                upload_in_KB += float( down )
             except ValueError: # Header of ifstat 
                 pass
-        return (upload_in_KBps, download_in_KBps)
+        return (upload_in_KB, download_in_KB)
     def get_average_transferrate_in_MBps(self):
         (upload_in_KBps, download_in_KBps) = self.get_average_transferrate_in_KBps()
         upload_in_MBps = upload_in_KBps / 1000
@@ -214,6 +216,14 @@ class Ifstats(object):
             except ValueError: # Header of ifstat 
                 pass
         return (max_upload_in_KBps, max_download_in_KBps)
+
+def animate_line(line):
+    sys.stdout.write(line)
+    sys.stdout.write("\r") # rewrite same line
+    sys.stdout.flush()
+
+def stop_animate_line():
+    print ""
     
 def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, log_file, sample_files_dir, unit, mountpoint, check=False, timelimit_in_min=None):
     ''':returns: amount of files successfully written to the file system'''
@@ -242,19 +252,20 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
             try:
                 dd('if='+copy_source+str(nr), 'of='+copy_destination+str(nr), 'bs=131072')
                 success += 1
-                print "copy "+copy_source+str(nr)
+                animate_line("copy "+copy_source+str(nr)+" -> "+copy_destination+str(nr))
             except ErrorReturnCode, e:
                 tries -= 1
                 errors += 1
                 if tries == 0:
-                    break 
-                print "Error occured during copying - retrying:"+repr(e)
+                    break
+                print "\nError occured during copying - retrying:"+repr(e)
                 #traceback.print_exc()
                 continue
             break # stop loop if command succeeded
         timeout = timelimit_in_s < (datetime.datetime.now() - time_before_operation).seconds
         if timeout:
             break
+    stop_animate_line()
     total_time_of_operation = (datetime.datetime.now() - time_before_operation).total_seconds()
     # Give upload process at least 10 minutes, to see how it behaves without load
     TEN_MIN = 60 * 10
@@ -262,7 +273,7 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
         max_wait_in_s = TEN_MIN
     else:
         max_wait_in_s = max( timelimit_in_s - total_time_of_operation, TEN_MIN)    
-    wait_for_completed_upload(mountpoint, max_wait_in_s)
+    wait_for_completed_transfer(mountpoint, max_wait_in_s)
     timeout = timelimit_in_s < (datetime.datetime.now() - time_before_operation).seconds
     ifstats.stop()
     ifstats.store(LOG_DIR+'/ifstats_out')
