@@ -233,7 +233,7 @@ def animate_line(line):
 def stop_animate_line():
     print ""
     
-def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, log_file, sample_files_dir, unit, mountpoint, check=False, timelimit_in_min=None):
+def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, log_dir, sample_files_dir, unit, mountpoint, reading=False, timelimit_in_min=None):
     ''':returns: amount of files successfully written to the file system'''
     #check="$6" #check copy destination with the file of the name "file_sizeMB" in $SAMPLE_FILES_DIR
     success = 0
@@ -245,11 +245,10 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     timelimit_in_s = timelimit_in_min * 60
     timeout = False
 
-    LOG_DIR = os.path.dirname(log_file)+"/"+str(file_size)
-    if check:
-        LOG_DIR += "/read"
+    if reading:
+        LOG_DIR = log_dir + "/read"
     else:
-        LOG_DIR += "/write"
+        LOG_DIR = log_dir + "/write"
     os.makedirs(LOG_DIR)
       
     copy_stats_process = Process(target=periodic_copy_stats, args=(LOG_DIR, mountpoint))
@@ -293,7 +292,7 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     time_of_multiple_operations = time_after_operations - time_before_operation
     print "time_before_operation %s - time_after_operation %s" % (time_before_operation, time_after_operations)
     for nr in range(1, success+1):  # from 1 to written files
-        if check:
+        if reading:
             try:
                 if not is_equal(copy_destination+str(nr), sample_files_dir+'/'+str(file_size)+unit+'_'+str(nr)):
                     corruption += 1
@@ -323,6 +322,28 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
 def get_immediate_subdirectories(a_dir):
     return [os.path.abspath(os.path.join(a_dir, name)) for name in os.walk(a_dir).next()[1]]
 
+def get_date_as_str():
+    return datetime.datetime.today().strftime('%Y.%m.%d_%H.%M')
+
+def create_tmp_dir():
+    ret = '/tmp/cf/'+get_date_as_str()
+    if not os.path.exists(ret):
+        os.makedirs(ret)
+    return ret
+
+def create_test_dir(mountpoint, idx):
+    ret = mountpoint+"/data/cftest"+str(idx)
+    if not os.path.exists(ret):
+        os.makedirs(ret)
+    return ret
+
+def create_log_dir(LOG_DIRECTORY, file_size, date=None):
+    if date is None:
+        date = get_date_as_str()
+    ret = "%s/%s/%s" % (LOG_DIRECTORY, date, file_size )
+    if not os.path.exists(ret):
+            os.makedirs(ret)
+    return ret
 
 
 def main():
@@ -351,27 +372,15 @@ def main():
         print "size: %s number of files in group: %s"%(size, int(round(1.0*filegroup_size/size)))
         filequantity_arr.append( int(round(1.0*filegroup_size/size)) )
     
-
     if not os.path.exists(SAMPLE_FILES_DIR):
         os.makedirs(SAMPLE_FILES_DIR)
-    os.makedirs(TEMP_DIR)
     os.system(os.path.dirname(__file__)+"/create_streaming_files.py %s '%s' '%s' %s"%(SAMPLE_FILES_DIR, args.filesize, ' '.join(map(str,filequantity_arr)), unit))
     print "files created"    
 
     #iterate over all mountpoint directories
     for mountpoint in MOUNT_DIRECTORIES:
-        data_directory = mountpoint+"/data"
-        test_directory = data_directory+'/cftest3'
-            
-        log_directory = LOG_DIRECTORY+'/logs/streaming/'+os.path.basename(mountpoint)+'/'+now
-        write_time_log = log_directory + '/write_time_log'
-        read_time_log = log_directory + '/read_time_log'
-        if not os.path.exists(log_directory):
-            os.makedirs(log_directory)
-            
         print "starting tests"
 
-        
         idx = 0 
         for size in filesize_arr:
             if os.path.exists('/tmp/stop'):
@@ -379,28 +388,35 @@ def main():
                 while os.path.exists('/tmp/stop'):
                     sleep(1)
                 print "continuing test"
-            if not os.path.exists(test_directory):
-                os.makedirs(test_directory)
-            print "Test writing file size %s %s"%(size,unit)
-            writen_files = log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], write_time_log, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
-            print "Test reading file size %s %s"%(size,unit)
-            log_copy_operation(test_directory+'/'+size+unit+'_', TEMP_DIR+'/'+size+unit+'_', size, writen_files, read_time_log, SAMPLE_FILES_DIR, unit, mountpoint, check=True, timelimit_in_min=60)
-            filename = raw_input('Please clean up %s and press enter to continue: '%(test_directory))
+            log_directory = create_log_dir(LOG_DIRECTORY, size, date=None)
+            temp_dir = create_tmp_dir()
+            test_directory = create_test_dir(mountpoint, idx)
+
+            print "Test writing file size %s %s to %s"%(size,unit,test_directory)
+            writen_files = log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], log_directory, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
+            print "Test reading file size %s %s from %s"%(size,unit, test_directory)
+            log_copy_operation(test_directory+'/'+size+unit+'_', temp_dir+'/'+size+unit+'_', size, writen_files, log_directory, SAMPLE_FILES_DIR, unit, mountpoint, reading=True, timelimit_in_min=30)
             for nr in range(1,filequantity_arr[idx]+1):  # from 1 to file quantity
                 try:
-                    os.remove(TEMP_DIR+'/'+size+unit+'_'+str(nr))
-                except IOError: # Does not exist
-                    print "cannot remove "+TEMP_DIR+'/'+size+unit+'_'+str(nr)
+                    os.remove(temp_dir+'/'+size+unit+'_'+str(nr))
+                except Exception, e: # Does not exist
+                    animate_line("cannot remove "+temp_dir+'/'+size+unit+'_'+str(nr))
+            stop_animate_line()
+            for nr in range(1,writen_files+1):  # from 1 to file quantity
+                try:
+                    os.remove(test_directory+'/'+size+unit+'_'+str(nr))
+                except Exception, e: # Does not exist
+                    animate_line("cannot remove "+test_directory+'/'+size+unit+'_'+str(nr))
+            stop_animate_line()
             try:
                 HEADER = create_mail_header(MAIL_SENDER, RECIPIENT, "Test done: %s - %s %s"%(test_directory, size, unit))
                 send_mail(MAIL_SENDER, MAIL_PASSWORD, RECIPIENT, HEADER, "test done")
             except Exception, e:
                 pass
+            sleep(120)
             idx += 1
-        print "Created statistic files in "+log_directory
-    
-    #clean up before exit
-    shutil.rmtree(TEMP_DIR)
+            print "Created statistic files in "+log_directory
+            shutil.rmtree(temp_dir)
 
 if __name__ == '__main__':
     main()
