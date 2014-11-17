@@ -26,8 +26,6 @@ from fish import ProgressFish
 # CONSTANTS
 HOME = os.environ['HOME']
 SAMPLE_FILES_DIR = '/tmp/cf/samplefiles'
-now = datetime.datetime.today().strftime('%Y.%m.%d_%H.%M')
-TEMP_DIR = '/tmp/cf/'+now 
 
 SMTP_SERVER = "smtp.web.de"
 SMTP_PORT = 587
