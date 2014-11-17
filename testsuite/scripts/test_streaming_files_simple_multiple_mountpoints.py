@@ -337,7 +337,7 @@ def create_tmp_dir():
     return ret
 
 def create_test_dir(mountpoint, idx):
-    ret = mountpoint+"/data/cftest"+str(idx)
+    ret = mountpoint+"/data/My SugarSync/cftest_"+str(idx)
     if not os.path.exists(ret):
         os.makedirs(ret)
     return ret
