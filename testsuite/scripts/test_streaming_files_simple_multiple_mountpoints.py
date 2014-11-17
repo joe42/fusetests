@@ -265,7 +265,7 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
                 errors += 1
                 if tries == 0:
                     break
-                print "\nError occured during copying - retrying:"+repr(e)
+                print "\nError occured during copying - retrying:%s\n" % repr(e)
                 #traceback.print_exc()
                 continue
             break # stop loop if command succeeded
