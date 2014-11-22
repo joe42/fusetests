@@ -75,6 +75,11 @@ def _get_upload_rate_mb(stats_filepath):
     num = line.split()[0]
     return float(num)
 
+def _get_cache_size_mb(stats_filepath):
+    line = sh.grep('MB of cached data', stats_filepath)
+    num = line.split()[0]
+    return float(num)
+
 def _fill_empty_rows(columns):
     '''*columns* represents a table with keys as column names 
     and values as a list of values for the column.
@@ -107,6 +112,33 @@ def _fill_empty_rows(columns):
         columns[k].extend( [0]*diff )
 
 
+def get_cache_size():
+    columns = collections.OrderedDict()
+    cnt_date_col = 1
+    for service in dir:
+        for testdate in _get_dirs(service):
+            testdate_dir = service+"/"+testdate
+            for filesize in filter((lambda x:x.isdigit()), _get_dirs(testdate_dir)):
+                date_header = 'Date'+str(cnt_date_col)
+                cnt_date_col += 1
+                columns[date_header] = [date_header] 
+                header = "\"%s\"" % repr((service, filesize))
+                print "add new header for filesize: "+header
+                columns[header] = [header]
+                stats_dir = testdate_dir +"/"+filesize+"/write/stats"
+                start_time = None
+                for stats_filename in sorted(os.listdir(stats_dir)):
+                    stats_file = stats_dir+"/"+stats_filename
+                    cache_size = _get_cache_size_mb(stats_file)
+                    curdate_s = _get_time(stats_file)
+                    if start_time is None:
+                        start_time = curdate_s
+                    columns[header].append(cache_size)
+                    columns[date_header].append((curdate_s-start_time) / 60)
+    _fill_empty_rows(columns)
+    print "cache size"
+    print  tabulate(columns, tablefmt="plain")
+    return tabulate(columns, tablefmt="plain")
 
 def get_internal_average_upload_rate():
     columns = collections.OrderedDict()
@@ -177,7 +209,7 @@ def get_download_rates():
 
 MONOCHROME = 'monochrome'
 
-def plot(input_file, output_file, nr_of_lines, options = None):
+def plot(input_file, output_file, nr_of_lines, options = None, label = 'transfer rate [MB per s]'):
     '''Plot input file with uneven column number n being x axis value, 
     and n+1 being the corresponding y axis values for column n.'''
     if options is None:
@@ -185,7 +217,7 @@ def plot(input_file, output_file, nr_of_lines, options = None):
     with tempfile.NamedTemporaryFile() as plot_file:
         print >>plot_file, 'set xlabel "time [min]";'
         print >>plot_file, 'set xtic auto;'
-        print >>plot_file, 'set ylabel "transfer rate [MB per s]";'
+        print >>plot_file, 'set ylabel "%s";' % label
         #print >>plot_file, 'set timefmt '%Y-%m-%d %H:%M:%S''
         if MONOCHROME in options:
             print >>plot_file, 'set terminal pdf monochrome solid font "Helvetica,14" size 16cm,12cm'
@@ -224,6 +256,13 @@ def main():
             print >>data, str(upload_rates)
             data.flush()
             plot(data.name, "upload_rates.pdf", nr_of_lines)
+    cache_size = get_cache_size()
+    contains_data = len(cache_size.splitlines()) > 2
+    if contains_data: 
+        with tempfile.NamedTemporaryFile() as data:
+            print >>data, str(cache_size)
+            data.flush()
+            plot(data.name, "cache_size.pdf", nr_of_lines, label='cache size [MB]')
     upload_rates = get_internal_average_upload_rate()
     contains_data = len(upload_rates.splitlines()) > 2
     if contains_data: 
