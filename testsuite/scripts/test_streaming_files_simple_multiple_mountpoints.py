@@ -253,13 +253,20 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     copy_stats_process.start()
     ifstats = Ifstats()
     time_before_operation = datetime.datetime.now() - datetime.timedelta(0)
+    subdir = 0
     for nr in range(1, nr_of_files+1):  # from 1 to file quantity
-        tries = 10
+        if reading:
+            src = copy_source+'/'+str(subdir)+'/'+filename
+            dst = copy_destination+'/'+filename
+        else:
+            src = copy_source+'/'+filename
+            dst = copy_destination+'/'+str(subdir)+'/'+filename
+        tries = 2
         while True:
             try:
-                dd('if='+copy_source+str(nr), 'of='+copy_destination+str(nr), 'bs=131072')
+                dd('if='+src, 'of='+dst, 'bs=131072')
                 success += 1
-                animate_line("copy "+copy_source+str(nr)+" -> "+copy_destination+str(nr))
+                animate_line("copy "+src+" -> "+dst)
             except ErrorReturnCode, e:
                 tries -= 1
                 errors += 1
@@ -292,7 +299,7 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     for nr in range(1, success+1):  # from 1 to written files
         if reading:
             try:
-                if not is_equal(copy_destination+str(nr), sample_files_dir+'/'+str(file_size)+unit+'_'+str(nr)):
+                if not is_equal(copy_destination+'/'+filename, sample_files_dir+'/'+filename):
                     corruption += 1
             except Exception, e:
                 print "Error occured during checking for file corruption:"+repr(e)
@@ -336,10 +343,16 @@ def create_tmp_dir():
         os.makedirs(ret)
     return ret
 
-def create_test_dir(mountpoint, idx):
+def create_test_dirs(mountpoint, idx):
+    '''Creates a root test directory indexed by *idx*.
+    The root directory contains subdirectories 0 through 99. 
+    :returns: root of the test directory for the current test'''
     ret = mountpoint+"/data/My SugarSync/cftest_"+str(idx)
     if not os.path.exists(ret):
         os.makedirs(ret)
+    for subdir in range(0,100):
+        if not os.path.exists(ret+'/'+str(subdir)):
+            os.makedirs(ret+'/'+str(subdir))
     return ret
 
 def create_log_dir(LOG_DIRECTORY, file_size, date=None):
@@ -395,12 +408,12 @@ def main():
                 print "continuing test"
             log_directory = create_log_dir(LOG_DIRECTORY, size, date=None)
             temp_dir = create_tmp_dir()
-            test_directory = create_test_dir(mountpoint, idx)
+            test_directory = create_test_dirs(mountpoint, idx)
 
             print "Test writing file size %s %s to %s"%(size,unit,test_directory)
-            writen_files = log_copy_operation(SAMPLE_FILES_DIR+'/'+size+unit+'_', test_directory+'/'+size+unit+'_', size, filequantity_arr[idx], log_directory, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
+            writen_files = log_copy_operation(SAMPLE_FILES_DIR, test_directory, size, filequantity_arr[idx], log_directory, SAMPLE_FILES_DIR, unit, mountpoint, timelimit_in_min=60)
             print "Test reading file size %s %s from %s"%(size,unit, test_directory)
-            log_copy_operation(test_directory+'/'+size+unit+'_', temp_dir+'/'+size+unit+'_', size, writen_files, log_directory, SAMPLE_FILES_DIR, unit, mountpoint, reading=True, timelimit_in_min=30)
+            log_copy_operation(test_directory, temp_dir, size, writen_files, log_directory, SAMPLE_FILES_DIR, unit, mountpoint, reading=True, timelimit_in_min=10)
             for nr in range(1,filequantity_arr[idx]+1):  # from 1 to file quantity
                 try:
                     os.remove(temp_dir+'/'+size+unit+'_'+str(nr))
