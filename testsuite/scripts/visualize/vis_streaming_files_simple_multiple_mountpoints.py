@@ -43,6 +43,9 @@ def get_upload_rates():
                     else:
                         diff_seconds = (curdate_s-lastdate_s)
                         upload_rate = (upload - previous_upload) / diff_seconds
+                        # upload rate is smaller than zero if statistics are cleared
+                        if upload_rate < 0:
+                            upload_rate = 0
                         lastdate_s = curdate_s
                         previous_upload = upload
                         columns[header].append(upload_rate)
@@ -238,3 +241,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
