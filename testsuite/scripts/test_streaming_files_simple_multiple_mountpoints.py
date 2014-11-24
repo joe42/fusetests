@@ -255,6 +255,9 @@ def log_copy_operation(copy_source, copy_destination, file_size, nr_of_files, lo
     time_before_operation = datetime.datetime.now() - datetime.timedelta(0)
     subdir = 0
     for nr in range(1, nr_of_files+1):  # from 1 to file quantity
+        filename = file_size+unit+'_'+str(nr)
+        if nr % 500 == 0:
+            subdir = subdir + 1
         if reading:
             src = copy_source+'/'+str(subdir)+'/'+filename
             dst = copy_destination+'/'+filename
