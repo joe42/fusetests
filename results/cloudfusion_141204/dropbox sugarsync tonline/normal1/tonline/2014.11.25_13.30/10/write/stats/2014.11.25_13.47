@@ -1,0 +1,14 @@
+Aborted downloads are not considered. 
+If the store is updated from outside, reading this file if it is in the cache, is still counted as hit.
+0.0 MBs download rate
+0.0652565632749 MBs upload rate
+43.17 MB uploaded
+0.0 MB downloaded
+
+0 cache misses
+5592 cache hits
+
+24 MB of cached data
+
+Status:
+Last heartbeat was 2.04692006111 s ago.

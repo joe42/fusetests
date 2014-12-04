@@ -1,0 +1,2 @@
+<type 'exceptions.Exception'> occured 15 time(s). Last occurrence: 4068 seconds ago
+Description: ('Forcefully terminated WriteWorker process %s to write %s', 31979, '/My SugarSync/cftest_1/0/chunk_ED7WMR6B_AQ======.tar')
