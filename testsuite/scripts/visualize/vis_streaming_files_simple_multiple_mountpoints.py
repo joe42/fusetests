@@ -220,9 +220,9 @@ def plot(input_file, output_file, nr_of_lines, options = None, label = 'transfer
         print >>plot_file, 'set ylabel "%s";' % label
         #print >>plot_file, 'set timefmt '%Y-%m-%d %H:%M:%S''
         if MONOCHROME in options:
-            print >>plot_file, 'set terminal pdf monochrome solid font "Helvetica,14" size 16cm,12cm'
+            print >>plot_file, 'set terminal pdf linewidth 3 monochrome solid font "Helvetica,14" size 16cm,12cm'
         else:
-            print >>plot_file, 'set terminal pdf solid font "Helvetica,14" size 16cm,12cm'
+            print >>plot_file, 'set terminal pdf linewidth 3 solid font "Helvetica,14" size 16cm,12cm'
         print >>plot_file, 'set output "%s"' % output_file 
         plot_file.write('plot ')
         print nr_of_lines
